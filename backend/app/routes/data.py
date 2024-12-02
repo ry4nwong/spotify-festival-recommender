@@ -45,11 +45,9 @@ def webscrape_all_festivals():
                 try:
                     correct_date = lambda x: x.split('/')[0] if '/' in x else x
                     date = correct_date(festival_info[2])
-                    cancelled = lambda x: True if 'CANCELLED' in x else False
-                    # is_cancelled = if_cancelled(festival_info[2])
-                    if cancelled(festival_info[2]):
-                        continue
-                    all_festivals['festivals'][festival_info[0]] = {'location': festival_info[1], 'dates': date}
+                    if_cancelled = lambda x: True if 'CANCELLED' in x else False
+                    is_cancelled = if_cancelled(festival_info[2])
+                    all_festivals['festivals'][festival_info[0]] = {'location': festival_info[1], 'dates': date, 'cancelled': is_cancelled}
                 except:
                     continue
         page_count += 1
