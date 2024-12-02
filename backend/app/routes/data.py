@@ -3,24 +3,34 @@
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
 import time
 import json
 
+from flask import Blueprint, jsonify
+
+data_blueprint = Blueprint('data', __name__)
+
+def headless_driver():
+    options = Options()
+
 # create a function that uses a client scraper to scrape through the webpage
-def webscrape_all_festivals(festival_url):
+# wrapped in flask API call
+@data_blueprint.route('/scrape-mfw', methods=['GET'])
+def webscrape_all_festivals():
     """runs through all pages of musicfestivalwizard to obtain all US festivals"""
     all_festivals = {'festivals':{}}
     page_count = 1
 
     # first page has diff url
     driver = webdriver.Chrome()
-    festival_url = "https://www.musicfestivalwizard.com/festival-guide/us-festivals/"
+    festival_url = "https://www.musicfestivalwizard.com/all-festivals/?festival_guide=us-festivals&festivalgenre=electronic&festivaltype&month&festival_size&festival_length&company#038;festivalgenre=electronic&festivaltype&month&festival_size&festival_length&company"
     driver.get(festival_url)
 
     # loop until a page without page numbers
     while True and len(driver.find_elements(By.CLASS_NAME, "page-numbers")) != 0: 
         if page_count != 1:
-            festival_url = f"https://www.musicfestivalwizard.com/festival-guide/us-festivals/page/{page_count}/"
+            festival_url = f"https://www.musicfestivalwizard.com/all-festivals/page/{page_count}/?festival_guide=us-festivals&festivalgenre=electronic&festivaltype&month&festival_size&festival_length&company#038;festivalgenre=electronic&festivaltype&month&festival_size&festival_length&company"
         driver = webdriver.Chrome()
         driver.get(festival_url)
 
@@ -42,10 +52,11 @@ def webscrape_all_festivals(festival_url):
                     continue
         page_count += 1
         time.sleep(3)
-    return all_festivals
+    driver.quit()
+    return jsonify(all_festivals)
 
 # call function and add to json file
-all_festival_output = webscrape_all_festivals("https://www.musicfestivalwizard.com/festival-guide/us-festivals/")
+# all_festival_output = webscrape_all_festivals("https://www.musicfestivalwizard.com/festival-guide/us-festivals/")
 
-with open('backend/app/routes/data/all_festivals.json', 'w') as output_file:
-    json.dump(all_festival_output, output_file)
+# with open('backend/app/routes/data/all_festivals.json', 'w') as output_file:
+#     json.dump(all_festival_output, output_file)
