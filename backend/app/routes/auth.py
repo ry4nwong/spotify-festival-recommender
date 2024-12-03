@@ -1,4 +1,4 @@
-from flask import Blueprint, redirect, request, session, current_app
+from flask import Blueprint, redirect, request, session
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import requests
