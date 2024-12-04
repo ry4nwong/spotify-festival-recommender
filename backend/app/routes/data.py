@@ -45,8 +45,8 @@ def webscrape_all_festivals():
     driver.get(festival_url)
 
     # loop until a page without page numbers
-    # while len(driver.find_elements(By.CLASS_NAME, "page-numbers")) != 0:
-    for i in range(1):
+    while len(driver.find_elements(By.CLASS_NAME, "page-numbers")) != 0:
+    # for i in range(1):
         # pause to allow loading
         time.sleep(1)
         elements = driver.find_elements(By.CLASS_NAME, "entry-title.search-title")
