@@ -2,31 +2,31 @@ services:
   app:
     build:
       context: .
-      dockerfile: Dockerfile  # This points to your Python Dockerfile
+      dockerfile: Dockerfile
     container_name: flask-app
     ports:
-      - "8080:5000"  # Map your app's port
+      - "8080:5000"
     depends_on:
-      - selenium-hub  # Ensure Selenium Hub starts before your app
+      - postgres
     environment:
-      - SELENIUM_HOST=selenium-hub  # Reference Selenium Hub in your app
+      DATABASE_URL: postgres://postgres:admin@db:5432/spotify_festival_recommender
     volumes:
-      - .:/app  # Mount your project directory for development (optional)
+      - .:/app
 
-  chrome:
-    image: selenium/node-chrome:dev
-    shm_size: 2gb
-    depends_on:
-      - selenium-hub
-    environment:
-      - SE_EVENT_BUS_HOST=selenium-hub
-      - SE_EVENT_BUS_PUBLISH_PORT=4442
-      - SE_EVENT_BUS_SUBSCRIBE_PORT=4443
-
-  selenium-hub:
-    image: selenium/hub:latest
-    container_name: selenium-hub
+  postgres:
+    container_name: postgres-container
+    image: postgres
+    hostname: localhost
+    # Port 6543 on the outside maps to 5432 inside
     ports:
-      - "4442:4442"
-      - "4443:4443"
-      - "4444:4444"
+      - "6543:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  postgres-data:

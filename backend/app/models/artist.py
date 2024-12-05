@@ -1,0 +1,1 @@
+# Artist: id, name (string), genre (list for now)
