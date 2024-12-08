@@ -89,6 +89,27 @@ def webscrape_all_festivals():
     driver.quit()
     return jsonify(all_festivals)
 
+# function that scrapes all artist genre info given all festival info
+@data_blueprint.route('/scrape-genres', methods=['GET'])
+def all_artist_genre(all_festivals):
+    artist_genre = {}
+    gemini_call_limit = 0
+
+    # loop through all festivals and apply function to find artist genres
+    for name,festival in all_festivals['festivals'].items():
+        artists_to_search = festival['artists']
+        for artist in artists_to_search:
+            if artist in artist_genre.keys():
+                output = webscrape_artist_genre(artist, gemini_call_limit)
+                artist_genre[artist] += output[0]
+                gemini_call_limit += output[1]
+            else:
+                output = webscrape_artist_genre(artist, gemini_call_limit)
+                artist_genre[artist] = output[0]
+                gemini_call_limit += output[1]
+
+    return jsonify(artist_genre)
+
 # Helper function to gather artist and tag information
 def webscrape_festival_info(festival_href):
     driver = new_webdriver()
@@ -114,7 +135,7 @@ def webscrape_festival_info(festival_href):
     driver.quit()
     return artist_list, tags
 
-def webscrape_artist_genre(artist_name):
+def webscrape_artist_genre(artist_name, gemini_call_limit):
     # function that finds artist genres based on name
     artist_name = artist_name.lower().replace(' ', '-').replace('&', 'and')
 
@@ -141,8 +162,13 @@ def webscrape_artist_genre(artist_name):
         response = model.generate_content(f'Give me the edm genres in just a python list format for this artist: {artist_name}').text
         response = response.replace('`', '').split('=', 1)[1].strip()
         genre_output = ast.literal_eval(response)
+
+    if gemini_call_limit > 14:
+        # wait 1 minute for limit to pass
+        time.sleep(60)
         
-    return genre_output
+    # increments gemini call count
+    return genre_output, 1
 
 @data_blueprint.route('/test', methods=['GET'])
 def test_query():
