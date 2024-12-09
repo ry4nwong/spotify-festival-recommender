@@ -4,8 +4,12 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium_stealth import stealth
+import musicbrainzngs 
+import google.generativeai as genai
 import time
+import ast
 import json
+import os
 
 from flask import Blueprint, jsonify
 
@@ -85,6 +89,27 @@ def webscrape_all_festivals():
     driver.quit()
     return jsonify(all_festivals)
 
+# function that scrapes all artist genre info given all festival info
+@data_blueprint.route('/scrape-genres', methods=['GET'])
+def all_artist_genre(all_festivals):
+    artist_genre = {}
+    gemini_call_limit = 0
+
+    # loop through all festivals and apply function to find artist genres
+    for name,festival in all_festivals['festivals'].items():
+        artists_to_search = festival['artists']
+        for artist in artists_to_search:
+            if artist in artist_genre.keys():
+                output = webscrape_artist_genre(artist, gemini_call_limit)
+                artist_genre[artist] += output[0]
+                gemini_call_limit += output[1]
+            else:
+                output = webscrape_artist_genre(artist, gemini_call_limit)
+                artist_genre[artist] = output[0]
+                gemini_call_limit += output[1]
+
+    return jsonify(artist_genre)
+
 # Helper function to gather artist and tag information
 def webscrape_festival_info(festival_href):
     driver = new_webdriver()
@@ -109,6 +134,41 @@ def webscrape_festival_info(festival_href):
 
     driver.quit()
     return artist_list, tags
+
+def webscrape_artist_genre(artist_name, gemini_call_limit):
+    # function that finds artist genres based on name
+    artist_name = artist_name.lower().replace(' ', '-').replace('&', 'and')
+
+    # use musicbranz api
+    musicbrainzngs.set_useragent("spotify_music_recommender project", version = '1')
+    artist_id = musicbrainzngs.search_artists(query = artist_name, limit = 1)['artist-list']
+    if len(artist_id) == 0:
+            return None
+    else:
+        genre_output = []
+        # genres contain upvotes, only take upvoted genres
+        for i in artist_id[0]['tag-list']:
+            if i['count'] == 0:
+                continue
+            else:
+                genre_output.append(i['name'])
+
+    # use gemini for artists that are not found
+    if len(genre_output) == 0:
+        # api call limit 15 per minute
+        time.sleep(5)
+        genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(f'Give me the edm genres in just a python list format for this artist: {artist_name}').text
+        response = response.replace('`', '').split('=', 1)[1].strip()
+        genre_output = ast.literal_eval(response)
+
+    if gemini_call_limit > 14:
+        # wait 1 minute for limit to pass
+        time.sleep(60)
+        
+    # increments gemini call count
+    return genre_output, 1
 
 @data_blueprint.route('/test', methods=['GET'])
 def test_query():
