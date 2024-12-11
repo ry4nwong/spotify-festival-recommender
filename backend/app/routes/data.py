@@ -12,7 +12,7 @@ import json
 import os
 
 from flask import Blueprint, jsonify
-from app.services.db_service import save_to_db
+from app.services.db_service import save_festivals
 
 data_blueprint = Blueprint('data', __name__)
 
@@ -71,7 +71,7 @@ def webscrape_all_festivals():
                         artists = []
                     all_festivals[festival_info[0]] = {
                         'location': festival_info[1], 
-                        'dates': date, 
+                        'date': date, 
                         'cancelled': is_cancelled, 
                         'artists': artists, 
                         'tags': tags
@@ -90,7 +90,7 @@ def webscrape_all_festivals():
     driver.quit()
 
     # save to database
-    save_to_db(all_festivals, "festival")
+    save_festivals(all_festivals)
     print('saved to database successfully!')
     return jsonify(all_festivals)
 
