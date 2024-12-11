@@ -12,10 +12,11 @@ def create_app():
     app.secret_key = os.getenv('SECRET_KEY')
 
     # Database connection
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URI')
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     db.init_app(app)
-    db.create_all()
+    with app.app_context():
+        db.create_all()
 
     # Spotify Auth
     app.config['SPOTIFY_CLIENT_ID'] = os.getenv('CLIENT_ID')

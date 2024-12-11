@@ -2,6 +2,11 @@
 from app.models import db
 
 class Artist(db.Model):
-    id = db.Column(db.Integer, primary_key = True)
-    name = db.Column(db.String(255), nullable = False)
-    genre = db.Column(db.String(255))
+    __tablename__ = 'artists'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), nullable=False)
+    genres = db.relationship(
+        'Tag',
+        secondary='artist_tags',
+        backref=db.backref('artists', lazy='dynamic')
+    )
