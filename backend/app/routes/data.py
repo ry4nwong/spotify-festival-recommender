@@ -20,6 +20,9 @@ def new_webdriver():
     options = webdriver.ChromeOptions()
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    # options.add_argument("--disable-gpu")
+    # options.add_argument("--blink-settings=imagesEnabled=false")
 
     # for selenium stealth
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
@@ -60,6 +63,10 @@ def webscrape_all_festivals():
                 continue
             else:
                 festival_info = str(element.text).split('\n')
+                # Skips over advertisements
+                print(festival_info[0])
+                if "ADVERTISEMENT" in festival_info[0]:
+                    continue
                 page_link = element.find_elements(By.TAG_NAME, "a")[0]
                 artists, tags = webscrape_festival_info(page_link.get_attribute("href"))
                 try:
@@ -94,26 +101,19 @@ def webscrape_all_festivals():
     print('saved to database successfully!')
     return jsonify(all_festivals)
 
-# function that scrapes all artist genre info given all festival info
-@data_blueprint.route('/scrape-genres', methods=['GET'])
-def all_artist_genre(all_festivals):
+# function that scrapes all artist genre info given list of artists
+# @data_blueprint.route('/scrape-genres', methods=['GET'])
+def all_artist_genre(all_artists):
     artist_genre = {}
     gemini_call_limit = 0
 
     # loop through all festivals and apply function to find artist genres
-    for name,festival in all_festivals['festivals'].items():
-        artists_to_search = festival['artists']
-        for artist in artists_to_search:
-            if artist in artist_genre.keys():
-                output = webscrape_artist_genre(artist, gemini_call_limit)
-                artist_genre[artist] += output[0]
-                gemini_call_limit += output[1]
-            else:
-                output = webscrape_artist_genre(artist, gemini_call_limit)
-                artist_genre[artist] = output[0]
-                gemini_call_limit += output[1]
+    for artist in all_artists:
+        output = webscrape_artist_genre(artist, gemini_call_limit)
+        artist_genre[artist] = output[0] if artist not in artist_genre.keys() else artist_genre[artist] + output[0]
+        gemini_call_limit += output[1]
 
-    return jsonify(artist_genre)
+    return artist_genre
 
 # Helper function to gather artist and tag information
 def webscrape_festival_info(festival_href):
@@ -147,10 +147,12 @@ def webscrape_artist_genre(artist_name, gemini_call_limit):
     # use musicbranz api
     musicbrainzngs.set_useragent("spotify_music_recommender project", version = '1')
     artist_id = musicbrainzngs.search_artists(query = artist_name, limit = 1)['artist-list']
+    print(artist_name)
     if len(artist_id) == 0:
-            return None
-    else:
-        genre_output = []
+            return [], 0
+       
+    genre_output = []
+    if 'tag-list' in artist_id[0]:
         # genres contain upvotes, only take upvoted genres
         for i in artist_id[0]['tag-list']:
             if i['count'] == 0:
@@ -158,19 +160,20 @@ def webscrape_artist_genre(artist_name, gemini_call_limit):
             else:
                 genre_output.append(i['name'])
 
-    # use gemini for artists that are not found
-    if len(genre_output) == 0:
-        # api call limit 15 per minute
-        time.sleep(5)
-        genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content(f'Give me the edm genres in just a python list format for this artist: {artist_name}').text
-        response = response.replace('`', '').split('=', 1)[1].strip()
-        genre_output = ast.literal_eval(response)
+    # # use gemini for artists that are not found
+    # if len(genre_output) == 0:
+    #     # api call limit 15 per minute
+    #     time.sleep(5)
+    #     genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
+    #     model = genai.GenerativeModel("gemini-1.5-flash")
+    #     response = model.generate_content(f'Give me the edm genres in just a python list format for this artist: {artist_name}').text
+    #     print(response)
+    #     response = response.replace('`', '').split('=', 1)[1].strip()
+    #     genre_output = ast.literal_eval(response)
 
-    if gemini_call_limit > 14:
-        # wait 1 minute for limit to pass
-        time.sleep(60)
+    # if gemini_call_limit > 14:
+    #     # wait 1 minute for limit to pass
+    #     time.sleep(60)
         
     # increments gemini call count
     return genre_output, 1
@@ -178,6 +181,6 @@ def webscrape_artist_genre(artist_name, gemini_call_limit):
 @data_blueprint.route('/test', methods=['GET'])
 def test_query():
     driver = new_webdriver()
-    driver.get("https://www.google.com")
+    driver.get("https://www.musicfestivalwizard.com")
     print(driver.page_source)
     driver.quit()
