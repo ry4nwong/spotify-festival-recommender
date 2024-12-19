@@ -2,6 +2,7 @@
 
 from app.models import db
 from app.models import Festival, Artist, Tag
+from sqlalchemy import text
 
 # Function to persist festivals in database and link artists/tags
 def save_festivals(festivals):
@@ -79,6 +80,15 @@ def create_or_get_tag(tag_name):
     
     return new_tag
 
+# Helper function to get existing tables in database
+def query(table = "FESTIVALS"):
+    try:
+        sql_query = f"SELECT * FROM {table}"
+        result = db.session.execute(text(sql_query))
+        rows = [dict(row) for row in result.mappings()]
+        return rows
+    except:
+        return "Error executing query: " + sql_query
 
 
 def save_to_db(scraped_data, data_type = 'festival'):

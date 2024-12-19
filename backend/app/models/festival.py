@@ -2,7 +2,7 @@ from app.models import db
 
 class Festival(db.Model):
     __tablename__ = 'festivals'
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String(255), nullable=False)
     location = db.Column(db.String(255), nullable=False)
     date = db.Column(db.String(255), nullable=False)

@@ -12,7 +12,7 @@ import json
 import os
 
 from flask import Blueprint, jsonify
-from app.services.db_service import save_festivals
+from app.services.db_service import save_festivals, query
 
 data_blueprint = Blueprint('data', __name__)
 
@@ -177,6 +177,22 @@ def webscrape_artist_genre(artist_name, gemini_call_limit):
         
     # increments gemini call count
     return genre_output, 1
+
+# function that returns all festivals in database
+@data_blueprint.route('current-festivals', methods=['GET'])
+def get_current_festivals():
+    return query("FESTIVALS")
+
+# function that returns all artists in database
+@data_blueprint.route('current-artists', methods=['GET'])
+def get_current_artists():
+    return query("ARTISTS")
+
+# function that returns all artists in database
+@data_blueprint.route('current-tags', methods=['GET'])
+def get_current_tags():
+    return query("TAGS")
+
 
 @data_blueprint.route('/test', methods=['GET'])
 def test_query():
