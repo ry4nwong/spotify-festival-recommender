@@ -4,8 +4,7 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium_stealth import stealth
-import musicbrainzngs 
-import google.generativeai as genai
+import musicbrainzngs
 import time
 import ast
 import json
@@ -13,7 +12,7 @@ import os
 
 from datetime import datetime
 from flask import Blueprint, jsonify
-from backend.app.services.festival_service import save_festivals, query, cleanup_past_festivals
+from app.services.festival_service import save_festival, query, cleanup_past_festivals, parse_festival_date
 
 data_blueprint = Blueprint('data', __name__)
 
@@ -78,7 +77,8 @@ def webscrape_all_festivals():
                     is_cancelled = if_cancelled(festival_info[2])
                     if is_cancelled:
                         artists = []
-                    all_festivals[festival_info[0]] = {
+                    festival_entry = {
+                        'name': festival_info[0],
                         'location': festival_info[1], 
                         'start_date': start_date,
                         'end_date': end_date,
@@ -86,6 +86,8 @@ def webscrape_all_festivals():
                         'artists': artists, 
                         'tags': tags
                     }
+                    # save single festival
+                    save_festival(festival_entry)
                 except:
                     continue
 
@@ -100,38 +102,9 @@ def webscrape_all_festivals():
     driver.quit()
 
     # save to database
-    save_festivals(all_festivals)
+    # save_festivals(all_festivals)
     print('saved to database successfully!')
     return jsonify(all_festivals)
-
-# Helper function to parse start and end dates
-def parse_festival_date(date_str):
-    if date_str.strip().upper() == "CANCELLED":
-        return None, None
-    
-    date_str = date_str.title()
-    year = int(date_str.split(",")[1].strip())
-    date_str = date_str.split(",")[0]
-
-    if "-" not in date_str:
-        start_date = datetime.strptime(f"{date_str} {year}", "%B %d %Y")
-        return start_date, start_date
-    
-    date_str = date_str.replace("- ", "-").replace(" -", "-")
-
-    if " " not in date_str.split("-")[1]:
-        month, days = date_str.split()
-        start_day, end_day = days.split("-")
-        start_date = datetime.strptime(f"{month} {start_day} {year}", "%B %d %Y")
-        end_date = datetime.strptime(f"{month} {end_day} {year}", "%B %d %Y")
-        return start_date, end_date
-    
-    start_part, end_part = date_str.split("-")
-    start_month, start_day = start_part.split(" ")
-    end_month, end_day = end_part.split(" ")
-    start_date = datetime.strptime(f"{start_month} {start_day} {year}", "%B %d %Y")
-    end_date = datetime.strptime(f"{end_month} {end_day} {year}", "%B %d %Y")
-    return start_date, end_date
 
 # function that scrapes all artist genre info given list of artists
 # @data_blueprint.route('/scrape-genres', methods=['GET'])

@@ -1,5 +1,5 @@
 from app.models import Artist, db
-from tag_service import create_or_get_tag
+from app.services.tag_service import create_or_get_tag
 
 # Function to run web scraper on genre for each artist and persist in database
 def save_artist_genre(new_artists):
