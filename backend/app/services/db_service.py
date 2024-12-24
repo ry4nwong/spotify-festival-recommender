@@ -3,6 +3,7 @@
 from app.models import db
 from app.models import Festival, Artist, Tag
 from sqlalchemy import text
+from datetime import date
 
 # Function to persist festivals in database and link artists/tags
 def save_festivals(festivals):
@@ -17,7 +18,8 @@ def save_festivals(festivals):
             name = name,
             location = data['location'],
             cancelled = data['cancelled'],
-            date = data['date'],
+            start_date = data['start_date'],
+            end_date = data['end_date']
         )
 
         for artist in data['artists']:
@@ -27,7 +29,8 @@ def save_festivals(festivals):
                 if not exists:
                     new_artists.append(new_artist.name)
                 # Create link, automatically inputted into intermediate table
-                festival_entry.artists.append(new_artist)
+                if new_artist not in festival_entry.artists:
+                    festival_entry.artists.append(new_artist)
         
         for tag in data['tags']:
             new_tag = create_or_get_tag(tag)
@@ -89,7 +92,24 @@ def query(table = "FESTIVALS"):
         return rows
     except:
         return "Error executing query: " + sql_query
+    
+# Function to remove all past festivals
+def cleanup_past_festivals():
+    try:
+        today = date.today()
 
+        past_festivals = Festival.query.filter(Festival.end_date < today).all()
+
+        for festival in past_festivals:
+            festival.artists.clear()
+            festival.tags.clear()
+            db.session.delete(festival)
+
+        db.session.commit()
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"An error occurred during cleanup: {e}")
 
 def save_to_db(scraped_data, data_type = 'festival'):
     counter = 1

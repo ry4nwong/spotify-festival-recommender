@@ -11,8 +11,9 @@ import ast
 import json
 import os
 
+from datetime import datetime
 from flask import Blueprint, jsonify
-from app.services.db_service import save_festivals, query
+from app.services.db_service import save_festivals, query, festival_exists, cleanup_past_festivals
 
 data_blueprint = Blueprint('data', __name__)
 
@@ -44,6 +45,7 @@ def new_webdriver():
 @data_blueprint.route('/scrape-mfw', methods=['GET'])
 def webscrape_all_festivals():
     """runs through all pages of musicfestivalwizard to obtain all US festivals"""
+    cleanup_past_festivals()
     all_festivals = {}
     page_count = 1    
 
@@ -71,14 +73,15 @@ def webscrape_all_festivals():
                 artists, tags = webscrape_festival_info(page_link.get_attribute("href"))
                 try:
                     correct_date = lambda x: x.split('/')[0] if '/' in x else x
-                    date = correct_date(festival_info[2])
+                    start_date, end_date = parse_festival_date(correct_date(festival_info[2]))
                     if_cancelled = lambda x: True if 'CANCELLED' in x else False
                     is_cancelled = if_cancelled(festival_info[2])
                     if is_cancelled:
                         artists = []
                     all_festivals[festival_info[0]] = {
                         'location': festival_info[1], 
-                        'date': date, 
+                        'start_date': start_date,
+                        'end_date': end_date,
                         'cancelled': is_cancelled, 
                         'artists': artists, 
                         'tags': tags
@@ -100,6 +103,35 @@ def webscrape_all_festivals():
     save_festivals(all_festivals)
     print('saved to database successfully!')
     return jsonify(all_festivals)
+
+# Helper function to parse start and end dates
+def parse_festival_date(date_str):
+    if date_str.strip().upper() == "CANCELLED":
+        return None, None
+    
+    date_str = date_str.title()
+    year = int(date_str.split(",")[1].strip())
+    date_str = date_str.split(",")[0]
+
+    if "-" not in date_str:
+        start_date = datetime.strptime(f"{date_str} {year}", "%B %d %Y")
+        return start_date, start_date
+    
+    date_str = date_str.replace("- ", "-").replace(" -", "-")
+
+    if " " not in date_str.split("-")[1]:
+        month, days = date_str.split()
+        start_day, end_day = days.split("-")
+        start_date = datetime.strptime(f"{month} {start_day} {year}", "%B %d %Y")
+        end_date = datetime.strptime(f"{month} {end_day} {year}", "%B %d %Y")
+        return start_date, end_date
+    
+    start_part, end_part = date_str.split("-")
+    start_month, start_day = start_part.split(" ")
+    end_month, end_day = end_part.split(" ")
+    start_date = datetime.strptime(f"{start_month} {start_day} {year}", "%B %d %Y")
+    end_date = datetime.strptime(f"{end_month} {end_day} {year}", "%B %d %Y")
+    return start_date, end_date
 
 # function that scrapes all artist genre info given list of artists
 # @data_blueprint.route('/scrape-genres', methods=['GET'])
