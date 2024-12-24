@@ -13,7 +13,7 @@ import os
 
 from datetime import datetime
 from flask import Blueprint, jsonify
-from app.services.db_service import save_festivals, query, cleanup_past_festivals
+from backend.app.services.festival_service import save_festivals, query, cleanup_past_festivals
 
 data_blueprint = Blueprint('data', __name__)
 
