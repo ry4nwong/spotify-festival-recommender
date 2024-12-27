@@ -160,7 +160,8 @@ def webscrape_artist_genre(artist_name, gemini_call_limit):
     if 'tag-list' in artist_id[0]:
         # genres contain upvotes, only take upvoted genres
         for i in artist_id[0]['tag-list']:
-            if i['count'] == 0:
+            # no upvotes
+            if i['count'] < 0:
                 continue
             else:
                 genre_output.append(i['name'])
