@@ -1,5 +1,5 @@
 # Base image
-FROM python:3.10-slim
+FROM python:3.13
 
 # Set working directory
 WORKDIR /app
@@ -9,6 +9,7 @@ COPY requirements.txt .
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
 
+### Install CHROMIUM-DRIVER, MIGHT NEED TO CHANGE ###
 RUN apt-get update && apt-get install -y chromium-driver 
 
 # Copy project files
