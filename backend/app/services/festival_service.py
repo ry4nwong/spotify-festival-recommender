@@ -1,6 +1,6 @@
 # For all interactions between API and database
 
-from app.models import db, Festival, Artist, Tag
+from shared.db_models import db, Festival, Artist, Tag
 from sqlalchemy import text
 from datetime import date, datetime
 from app.services.artist_service import save_artist_genre, create_or_get_artist

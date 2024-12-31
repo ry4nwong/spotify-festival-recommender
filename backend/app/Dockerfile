@@ -5,9 +5,9 @@ FROM python:3.13
 WORKDIR /app
 
 # Install dependencies
-COPY requirements.txt .
+COPY requirements.txt /app/
 RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
+RUN pip install -r /app/requirements.txt
 
 ### Install CHROMIUM-DRIVER, MIGHT NEED TO CHANGE ###
 RUN apt-get update && apt-get install -y chromium-driver 
@@ -24,3 +24,4 @@ EXPOSE 5000
 
 # Command to start the Flask app
 CMD ["flask", "run"]
+

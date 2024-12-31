@@ -1,7 +1,8 @@
 from flask import Flask
+from flask_sqlalchemy import SQLAlchemy
 from dotenv import load_dotenv
 import os
-from app.models import db
+from shared.db_models import db
 from app.routes import api_blueprint, auth_blueprint, data_blueprint, db_blueprint
 
 # Initialize Flask app with blueprint (API route structure)

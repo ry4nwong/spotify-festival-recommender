@@ -1,4 +1,4 @@
-from app.models import Artist, db
+from shared.db_models import Artist, db
 from app.services.tag_service import create_or_get_tag
 
 # Function to run web scraper on genre for each artist and persist in database

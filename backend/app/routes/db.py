@@ -1,5 +1,5 @@
-from app.models import db
-from app.models import Festival, Artist, Tag
+from app import db
+from shared.db_models import Festival, Artist, Tag
 
 from flask import Blueprint, jsonify
 
@@ -14,7 +14,7 @@ def get_festivals():
                 "id": festival.id,
                 "name": festival.name,
                 "location": festival.location,
-                "date": festival.date
+                "date": festival.start_date
             }
             for festival in festivals
         ]

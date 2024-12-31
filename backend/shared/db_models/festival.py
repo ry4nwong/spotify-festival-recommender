@@ -1,4 +1,4 @@
-from app.models import db
+from shared.db_models import db
 
 class Festival(db.Model):
     __tablename__ = 'festivals'

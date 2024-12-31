@@ -9,7 +9,7 @@ services:
     # depends_on:
     #   - database
     environment:
-      DATABASE_URI: postgresql+psycopg2://postgres.ubesbxemvrevzeputnoo:SampliFiree@aws-0-us-west-1.pooler.supabase.com:5432/postgres
+      DATABASE_URI: ${DATABASE_URI}
     volumes:
       - .:/app
 

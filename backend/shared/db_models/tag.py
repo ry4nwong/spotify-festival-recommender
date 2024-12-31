@@ -1,4 +1,4 @@
-from app.models import db
+from shared.db_models import db
 
 class Tag(db.Model):
     __tablename__ = 'tags'

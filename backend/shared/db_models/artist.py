@@ -1,5 +1,5 @@
 # Artist: id, name (string), genre (list for now)
-from app.models import db
+from shared.db_models import db
 
 class Artist(db.Model):
     __tablename__ = 'artists'

@@ -1,4 +1,4 @@
-from app.models import db
+from shared.db_models import db
 
 # Many-to-many relationship between artists and festivals
 festival_artists = db.Table(

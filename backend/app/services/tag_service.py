@@ -1,4 +1,4 @@
-from app.models import db, Tag
+from shared.db_models import db, Tag
 
 # Helper function to get or create tag/genre in database
 def create_or_get_tag(tag_name):
