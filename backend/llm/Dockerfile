@@ -7,7 +7,7 @@ WORKDIR /llm
 # Install dependencies
 COPY requirements.txt /llm/
 RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
+RUN pip install -r /llm/requirements.txt
 
 # Copy project files
 COPY . /llm/
