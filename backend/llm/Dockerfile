@@ -12,6 +12,12 @@ RUN pip install -r /llm/requirements.txt
 # Copy project files
 COPY . /llm/
 
+# Copy shared folder
+COPY shared /app/shared
+
+# Cross-folder imports
+ENV PYTHONPATH="/app"
+
 # Set environment variables for Flask
 ENV FLASK_APP=app:create_app()
 ENV FLASK_RUN_HOST=0.0.0.0
