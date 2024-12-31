@@ -5,18 +5,18 @@ FROM python:3.13
 WORKDIR /llm
 
 # Install dependencies
-COPY requirements.txt /llm/
+COPY llm/requirements.txt /llm/
 RUN pip install --upgrade pip
 RUN pip install -r /llm/requirements.txt
 
 # Copy project files
-COPY . /llm/
+COPY llm /llm/
 
 # Copy shared folder
 COPY shared /shared
 
 # Cross-folder imports
-ENV PYTHONPATH="/backend"
+ENV PYTHONPATH="/llm:/shared"
 
 # Set environment variables for Flask
 ENV FLASK_APP=app:create_app()
