@@ -1,6 +1,0 @@
-Flask==3.1.0
-python-dotenv==1.0.1
-flask-sqlalchemy
-psycopg2-binary
-transformers
-torch

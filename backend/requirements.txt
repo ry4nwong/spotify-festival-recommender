@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+python-dotenv==1.0.1
+spotipy==2.24.0
+selenium==4.27.1
+selenium-stealth==1.0.6
+sqlalchemy
+asyncpg
+musicbrainzngs==0.7.1
+beautifulsoup4
+transformers

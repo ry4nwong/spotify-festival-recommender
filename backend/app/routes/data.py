@@ -1,208 +1,153 @@
 # For web scraper.
-# import dependencies
+import asyncio
+from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
 from selenium_stealth import stealth
-import musicbrainzngs
-import time
-import ast
-import json
-import os
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.database.dependencies import get_db
+from app.services.festival_service import save_festival, cleanup_past_festivals, parse_festival_date
 
-from datetime import datetime
-from flask import Blueprint, jsonify
-from app.services.festival_service import save_festival, query, cleanup_past_festivals, parse_festival_date
+from bs4 import BeautifulSoup
 
-data_blueprint = Blueprint('data', __name__)
+data_router = APIRouter(prefix="/data", tags=["Data"])
 
-def new_webdriver():
-    options = webdriver.ChromeOptions()
+async def new_webdriver():
+    options = Options()
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     # options.add_argument("--disable-gpu")
     # options.add_argument("--blink-settings=imagesEnabled=false")
 
-    # for selenium stealth
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option('useAutomationExtension', False)
-
-    new_driver = webdriver.Chrome(options=options)
-    stealth(new_driver,
+    service = Service()
+    driver = webdriver.Chrome(service=service, options=options)
+    
+    stealth(driver,
         languages=["en-US", "en"],
         vendor="Google Inc.",
         platform="Win32",
         webgl_vendor="Intel Inc.",
         renderer="Intel Iris OpenGL Engine",
         fix_hairline=True,
-        )
-    return new_driver
+    )
+    return driver
 
-# create a function that uses a client scraper to scrape through the webpage
-# wrapped in flask API call
-@data_blueprint.route('/scrape-mfw', methods=['GET'])
-def webscrape_all_festivals():
-    """runs through all pages of musicfestivalwizard to obtain all US festivals"""
-    cleanup_past_festivals()
-    all_festivals = {}
-    page_count = 1    
+# Semaphore for concurrency limits
+async def scraper_semaphore(semaphore, driver, page_link, festival):
+    async with semaphore:
+        await scrape_festival_details(driver, page_link, festival)
 
-    # first page has diff url
-    driver = new_webdriver()
-    festival_url = "https://www.musicfestivalwizard.com/all-festivals/?festival_guide=us-festivals&festivalgenre=electronic&festivaltype&month&festival_size&festival_length&company#038;festivalgenre=electronic&festivaltype&month&festival_size&festival_length&company"
+@data_router.get("/scrape-mfw-bs")
+async def webscrape_all_festivals(db: AsyncSession = Depends(get_db)):
+    """Runs through all pages of musicfestivalwizard to obtain all US festivals."""
+    await cleanup_past_festivals()
+    all_festivals = {} 
+    driver = await new_webdriver()
+    semaphore = asyncio.Semaphore(3)
+    
+    festival_url = "https://www.musicfestivalwizard.com/all-festivals/?festival_guide=us-festivals&festivalgenre=electronic"
     driver.get(festival_url)
+    html = driver.page_source
+    # driver.quit()
 
-    # loop until a page without page numbers
-    while len(driver.find_elements(By.CLASS_NAME, "page-numbers")) != 0:
-    # for i in range(1):
-        # pause to allow loading
-        time.sleep(1)
-        elements = driver.find_elements(By.CLASS_NAME, "entry-title.search-title")
-        for element in elements:
-            if len(element.text) < 1:
-                continue
-            else:
-                festival_info = str(element.text).split('\n')
-                # Skips over advertisements
-                print(festival_info[0])
-                if "ADVERTISEMENT" in festival_info[0]:
-                    continue
-                page_link = element.find_elements(By.TAG_NAME, "a")[0]
-                artists, tags = webscrape_festival_info(page_link.get_attribute("href"))
-                try:
-                    correct_date = lambda x: x.split('/')[0] if '/' in x else x
-                    start_date, end_date = parse_festival_date(correct_date(festival_info[2]))
-                    if_cancelled = lambda x: True if 'CANCELLED' in x else False
-                    is_cancelled = if_cancelled(festival_info[2])
-                    if is_cancelled:
-                        artists = []
-                    festival_entry = {
-                        'name': festival_info[0],
-                        'location': festival_info[1], 
-                        'start_date': start_date,
-                        'end_date': end_date,
-                        'cancelled': is_cancelled, 
-                        'artists': artists, 
-                        'tags': tags
-                    }
-                    # save single festival
-                    save_festival(festival_entry)
-                except:
-                    continue
-
-        time.sleep(2)
-        driver.quit()
-        page_count += 1
-        festival_url = f"https://www.musicfestivalwizard.com/all-festivals/page/{page_count}/?festival_guide=us-festivals&festivalgenre=electronic&festivaltype&month&festival_size&festival_length&company#038;festivalgenre=electronic&festivaltype&month&festival_size&festival_length&company"
-        driver = new_webdriver()
-        driver.get(festival_url)
+    soup = BeautifulSoup(html, "html.parser")
     
-    time.sleep(2)
-    driver.quit()
+    # Extract festival info and page link
+    elements = soup.find_all("div", class_="entry-title search-title")
+    festivals = []
+    for element in elements:
+        festival_info = element.get_text(separator='|', strip=True).split("|")
+        a_tag = element.find("a")
+        if a_tag:
+            page_link = a_tag["href"]
+            festivals.append((festival_info, page_link))
 
-    # save to database
-    # save_festivals(all_festivals)
-    print('saved to database successfully!')
-    return jsonify(all_festivals)
+    festival_tasks = []
 
-# function that scrapes all artist genre info given list of artists
-# @data_blueprint.route('/scrape-genres', methods=['GET'])
-def all_artist_genre(all_artists):
-    artist_genre = {}
-    gemini_call_limit = 0
+    for festival_info, page_link in festivals:
+        if "ADVERTISEMENT" in festival_info[0]:
+            continue
 
-    # loop through all festivals and apply function to find artist genres
-    for artist in all_artists:
-        output = webscrape_artist_genre(artist, gemini_call_limit)
-        artist_genre[artist] = output[0] if artist not in artist_genre.keys() else artist_genre[artist] + output[0]
-        gemini_call_limit += output[1]
+        festival_tasks.append(scraper_semaphore(semaphore, driver, page_link, festival_info))
+        # await scrape_festival_details(driver, page_link, festival)
 
-    return artist_genre
-
-# Helper function to gather artist and tag information
-def webscrape_festival_info(festival_href):
-    driver = new_webdriver()
-    driver.get(festival_href)
-    
-    time.sleep(1)
-
-    # find all artist names
-    artists = driver.find_elements(By.CLASS_NAME, "lineupblock")
-    artist_list = []
-    if artists:
-        artist_list = artists[0].text.split('\n')
-    
-    # find all tags
-    tags = []
-    tag_class = driver.find_elements(By.CLASS_NAME, "heading-breadcrumb")[1]
-    tag_list = tag_class.find_elements(By.TAG_NAME, "a")
-    for tag in tag_list:
-        tags.append(tag.text)
-
-    time.sleep(2)
+    await asyncio.gather(*festival_tasks)
 
     driver.quit()
-    return artist_list, tags
-
-def webscrape_artist_genre(artist_name, gemini_call_limit):
-    # function that finds artist genres based on name
-    artist_name = artist_name.lower().replace(' ', '-').replace('&', 'and')
-
-    # use musicbranz api
-    musicbrainzngs.set_useragent("spotify_music_recommender project", version = '1')
-    artist_id = musicbrainzngs.search_artists(query = artist_name, limit = 1)['artist-list']
-    print(artist_name)
-    if len(artist_id) == 0:
-            return [], 0
-       
-    genre_output = []
-    if 'tag-list' in artist_id[0]:
-        # genres contain upvotes, only take upvoted genres
-        for i in artist_id[0]['tag-list']:
-            # no upvotes
-            if i['count'] < 0:
-                continue
-            else:
-                genre_output.append(i['name'])
-
-    # # use gemini for artists that are not found
-    # if len(genre_output) == 0:
-    #     # api call limit 15 per minute
-    #     time.sleep(5)
-    #     genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
-    #     model = genai.GenerativeModel("gemini-1.5-flash")
-    #     response = model.generate_content(f'Give me the edm genres in just a python list format for this artist: {artist_name}').text
-    #     print(response)
-    #     response = response.replace('`', '').split('=', 1)[1].strip()
-    #     genre_output = ast.literal_eval(response)
-
-    # if gemini_call_limit > 14:
-    #     # wait 1 minute for limit to pass
-    #     time.sleep(60)
-        
-    # increments gemini call count
-    return genre_output, 1
-
-# function that returns all festivals in database
-@data_blueprint.route('current-festivals', methods=['GET'])
-def get_current_festivals():
-    return query("FESTIVALS")
-
-# function that returns all artists in database
-@data_blueprint.route('current-artists', methods=['GET'])
-def get_current_artists():
-    return query("ARTISTS")
-
-# function that returns all artists in database
-@data_blueprint.route('current-tags', methods=['GET'])
-def get_current_tags():
-    return query("TAGS")
+    print('Saved to database successfully!')
+    return all_festivals
 
 
-@data_blueprint.route('/test', methods=['GET'])
-def test_query():
-    driver = new_webdriver()
-    driver.get("https://www.musicfestivalwizard.com")
-    print(driver.page_source)
+async def scrape_festival_details(driver, page_link, festival_info):
+    driver = await new_webdriver()
+    driver.get(page_link)
+    html = driver.page_source
     driver.quit()
+
+    soup = BeautifulSoup(html, "html.parser")
+
+    elements = soup.find_all("div", class_="lineupblock")
+    artist_list = [element.get_text(separator='|', strip=True).split("|") for element in elements]
+    # Find all artist names
+    if artist_list:
+        artist_list = artist_list[0]
+
+    # Find all tags
+    elements = soup.find_all("span", class_="heading-breadcrumb")
+    tag_list = [element.get_text(separator='|', strip=True).split("|") for element in elements]
+
+    try:
+        correct_date = lambda x: x.split('/')[0] if '/' in x else x
+        start_date, end_date = parse_festival_date(correct_date(festival_info[2]))
+        print("Start and end dates:", start_date, end_date)
+        is_cancelled = start_date is None
+
+        if is_cancelled:
+            artist_list = []
+
+        festival_entry = {
+            'name': festival_info[0],
+            'location': festival_info[1],
+            'start_date': start_date,
+            'end_date': end_date,
+            'cancelled': is_cancelled,
+            'artists': artist_list,
+            'tags': tag_list[0]
+        }
+
+        await save_festival(festival_entry)
+    except Exception as e:
+        print(f"❌ Error in scrape_festival_details for {festival_info[0]}: {e}")
+        print(f"❌ Festival info: {festival_info}")
+        print(f"❌ artist_list: {artist_list}")
+        print(f"❌ tag_list: {tag_list}")
+        print(page_link)
+
+@data_router.get("/test")
+async def scrape_test():
+    driver = await new_webdriver()
+    driver.get("https://www.musicfestivalwizard.com/all-festivals/page/4/?festival_guide=us-festivals&festivalgenre=electronic&festivaltype&month&festival_size&festival_length&company#038;festivalgenre=electronic&festivaltype&month&festival_size&festival_length&company")
+
+    html = driver.page_source
+    driver.quit()
+
+    soup = BeautifulSoup(html, "html.parser")
+
+    elements = soup.find_all("div", class_="entry-title search-title")
+    festivals = [element.get_text(separator='|', strip=True).split("|") for element in elements]
+
+    festivals2 = []
+    for element in elements:
+        festival_info = element.get_text(separator='|', strip=True).split("|")
+        a_tag = element.find("a")
+        if a_tag:
+            page_link = a_tag["href"]
+            festivals2.append((festival_info, page_link))
+
+
+
+    print(festivals2)

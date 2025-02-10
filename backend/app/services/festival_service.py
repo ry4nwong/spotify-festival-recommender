@@ -1,107 +1,86 @@
-# For all interactions between API and database
-
-from shared.db_models import db, Festival, Artist, Tag
-from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import Depends
+from sqlalchemy.future import select
+from sqlalchemy.sql import text
 from datetime import date, datetime
-from app.services.artist_service import save_artist_genre, create_or_get_artist
-from app.services.tag_service import create_or_get_tag
+from app.database.db_init import AsyncSessionLocal
+from app.models.festival import Festival
+from app.models.artist import Artist
+from app.models.tag import Tag
+from app.services.artist_service import save_artist_genre, create_or_get_artist, get_artists
+from app.services.tag_service import create_or_get_tag, get_tags
+from app.database.db_init import AsyncSessionLocal
+import re
 
-# Function to persist festivals in database and link artists/tags
-def save_festivals(festivals):
-    for name, data in festivals.items():
-        new_artists = []
-        festival_entry = Festival(
-            name = name,
-            location = data['location'],
-            cancelled = data['cancelled'],
-            start_date = data['start_date'],
-            end_date = data['end_date']
-        )
-
-        for artist in data['artists']:
-            # accounts for b2b appearances (ex. Slander B2B Dimension)
-            for each_artist in artist.split(' B2B '):
-                new_artist, exists = create_or_get_artist(each_artist)
-                if not exists:
-                    new_artists.append(new_artist.name)
-                # Create link, automatically inputted into intermediate table
-                if new_artist not in festival_entry.artists:
-                    festival_entry.artists.append(new_artist)
-        
-        for tag in data['tags']:
-            new_tag = create_or_get_tag(tag)
+async def save_festival(festival_entry: dict):
+    async with AsyncSessionLocal() as db:
+        try:
+            print(f"✅ Attempting to save festival: {festival_entry['name']}")
+            festival, artists_added = await check_festival(festival_entry['name'], db)
             
-            # Create link
-            festival_entry.tags.append(new_tag)
-        
-        db.session.add(festival_entry)
-        save_artist_genre(new_artists)
-        db.session.commit()
+            # Add new festival if does not exist
+            if festival is None:
+                print(f"✅ Creating new festival: {festival_entry['name']}")
+                festival = Festival(
+                    name=festival_entry['name'],
+                    location=festival_entry['location'],
+                    cancelled=festival_entry['cancelled'],
+                    start_date=festival_entry['start_date'],
+                    end_date=festival_entry['end_date']
+                )
 
-# Saves ONE festival to db
-def save_festival(festival_entry):
-    new_artists = []
-    festival, artists_added = check_festival(festival_entry['name'])
-    # Adds a new festival if it does not exist
-    if festival is None:
-        festival = Festival(
-            name = festival_entry['name'],
-            location = festival_entry['location'],
-            cancelled = festival_entry['cancelled'],
-            start_date = festival_entry['start_date'],
-            end_date = festival_entry['end_date']
-        )
+                # for tag in festival_entry['tags']:
+                #     new_tag = await create_or_get_tag(tag, db)
+                #     # Create Link
+                #     festival.tags.append(new_tag)
+                all_tags = await get_tags(festival_entry['tags'], db)
+                
 
-        for tag in festival_entry['tags']:
-            new_tag = create_or_get_tag(tag)
-            
-            # Create link
-            festival.tags.append(new_tag)
+            # # Check if artists updated
+            # if not artists_added and festival_entry['artists']:
+            #     for artist in festival_entry['artists']:
+            #         # accounts for b2b appearances (ex. Slander B2B Dimension)
+            #         for each_artist in artist.split(' B2B '):
+            #             new_artist, exists = await create_or_get_artist(each_artist, db)
+            #             if not exists:
+            #                 new_artists.append(new_artist.name)
+            #             # Create link, automatically inputted into intermediate table
+            #             if new_artist not in festival.artists:
+            #                 festival.artists.append(new_artist)
+                
+            #     await save_artist_genre(new_artists, db)
 
-    # Checks if artists updated
-    if not artists_added:
-        for artist in festival_entry['artists']:
-            # accounts for b2b appearances (ex. Slander B2B Dimension)
-            for each_artist in artist.split(' B2B '):
-                new_artist, exists = create_or_get_artist(each_artist)
-                if not exists:
-                    new_artists.append(new_artist.name)
-                # Create link, automatically inputted into intermediate table
-                if new_artist not in festival.artists:
-                    festival.artists.append(new_artist)
-        
-        save_artist_genre(new_artists)
+            if (not artists_added) and festival_entry['artists']:
+                all_artists = await get_artists(festival_entry['artists'], db)
+                festival.artists.extend(all_artists)
 
-    db.session.add(festival)
-    db.session.commit()
-
-# Helper function to get existing tables in database
-def query(table = "FESTIVALS"):
-    try:
-        sql_query = f"SELECT * FROM {table}"
-        result = db.session.execute(text(sql_query))
-        rows = [dict(row) for row in result.mappings()]
-        return rows
-    except:
-        return "Error executing query: " + sql_query
+            print(f"✅ Attempring to add festival: {festival_entry['name']}")
+            db.add(festival)
+            await db.commit()
+            print(f"✅ Festival saved successfully: {festival_entry['name']}")
+        except Exception as e:
+            await db.rollback()
+            print(f"❌ Error during save: {e}")
     
 # Function to remove all past festivals
-def cleanup_past_festivals():
-    try:
-        today = date.today()
+async def cleanup_past_festivals():
+    async with AsyncSessionLocal() as db:
+        try:
+            today = date.today()
+            result = await db.execute(select(Festival).filter(Festival.end_date < today))
+            past_festivals = result.scalars().all()
 
-        past_festivals = Festival.query.filter(Festival.end_date < today).all()
+            for festival in past_festivals:
+                festival.artists.clear()
+                festival.tags.clear()
+                print("deleting festival " + festival.name)
+                await db.delete(festival)
 
-        for festival in past_festivals:
-            festival.artists.clear()
-            festival.tags.clear()
-            db.session.delete(festival)
+            await db.commit()
 
-        db.session.commit()
-
-    except Exception as e:
-        db.session.rollback()
-        print(f"An error occurred during cleanup: {e}")
+        except Exception as e:
+            await db.rollback()
+            print(f"An error occurred during cleanup: {e}")
 
 # Helper function to parse start and end dates
 def parse_festival_date(date_str):
@@ -134,8 +113,15 @@ def parse_festival_date(date_str):
 
 # Returns festival if exists AND if artists already added
 # returns festival (object), artists_added (boolean)
-def check_festival(festival_name):
-    festival = Festival.query.filter_by(name=festival_name).first()
-    artists_added = bool(festival.artists) if festival is not None else False
+# def check_festival(festival_name):
+#     festival = Festival.query.filter_by(name=festival_name).first()
+#     artists_added = bool(festival.artists) if festival is not None else False
+
+#     return festival, artists_added
+
+async def check_festival(festival_name: str, db: AsyncSession):
+    result = await db.execute(select(Festival).filter_by(name=festival_name))
+    festival = result.scalars().first()
+    artists_added = bool(festival.artists) if festival else False
 
     return festival, artists_added
