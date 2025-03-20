@@ -130,7 +130,7 @@ async def scrape_festival_details(driver, page_link, festival_info):
 @data_router.get("/test")
 async def scrape_test():
     driver = await new_webdriver()
-    driver.get("https://www.musicfestivalwizard.com/all-festivals/page/4/?festival_guide=us-festivals&festivalgenre=electronic&festivaltype&month&festival_size&festival_length&company#038;festivalgenre=electronic&festivaltype&month&festival_size&festival_length&company")
+    driver.get("https://www.musicfestivalwizard.com/all-festivals/?festival_guide=us-festivals&festivalgenre=electronic")
 
     html = driver.page_source
     driver.quit()

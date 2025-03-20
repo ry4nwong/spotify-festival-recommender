@@ -23,6 +23,11 @@ AsyncSessionLocal = sessionmaker(
 
 Base = declarative_base()
 
+from app.models.stage.stage_festival import StageFestival
+from app.models.stage.stage_associations import stage_festival_artists, stage_festival_tags, stage_artist_tags
+from app.models.stage.stage_artist import StageArtist
+from app.models.stage.stage_tag import StageTag
+
 from app.models.artist import Artist
 from app.models.festival import Festival
 from app.models.tag import Tag

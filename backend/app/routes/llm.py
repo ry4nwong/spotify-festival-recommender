@@ -9,3 +9,4 @@ llm_router = APIRouter(prefix="/llm", tags=["LLM"])
 async def generate(prompt: str):
     response = await generate_text(prompt)
     return {"response": response}
+

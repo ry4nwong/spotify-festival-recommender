@@ -9,3 +9,7 @@ asyncpg
 musicbrainzngs==0.7.1
 beautifulsoup4
 transformers
+sentence-transformers
+aiohttp
+pgvector
+torch
