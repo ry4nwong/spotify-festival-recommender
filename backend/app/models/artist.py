@@ -8,8 +8,8 @@ from app.models.associations import artist_tags, festival_artists
 class Artist(Base):
     __tablename__ = "artists"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name = Column(String(255), nullable=False)
+    id = Column(UUID(as_uuid=True), default=uuid.uuid4)
+    name = Column(String(255), primary_key=True, nullable=False)
     festivals = relationship(
         "Festival",
         secondary=festival_artists,

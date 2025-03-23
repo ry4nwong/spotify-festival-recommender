@@ -31,6 +31,7 @@ from app.models.stage.stage_tag import StageTag
 from app.models.artist import Artist
 from app.models.festival import Festival
 from app.models.tag import Tag
+from app.models.embedding import Embedding
 from app.models.associations import festival_artists, artist_tags, festival_tags
 
 async def init_db():

@@ -12,10 +12,9 @@ class StageFestival(Base):
     id = Column(UUID(as_uuid=True), default=uuid.uuid4)
     name = Column(String(255), primary_key=True, nullable=False)
     location = Column(String(255), nullable=False)
+    cancelled = Column(Boolean, default=False)
     start_date = Column(DateTime, nullable=True)
     end_date = Column(DateTime, nullable=True)
-    cancelled = Column(Boolean, default=False)
-    embedding = Column(Vector(768), nullable=True)
     stage_artists = relationship(
         "StageArtist",
         secondary=stage_festival_artists,

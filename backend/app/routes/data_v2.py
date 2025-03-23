@@ -12,8 +12,9 @@ from app.database.dependencies import get_db
 from app.models.stage.stage_festival import StageFestival
 from app.models.stage.stage_artist import StageArtist
 from app.models.stage.stage_tag import StageTag
+from app.models.embedding import Embedding
 from app.services.festival_service import save_festival, cleanup_past_festivals, parse_festival_date
-from app.llm.sentence_transformer import generate_embedding
+from app.llm.sentence_transformer import generate_embedding, chunk_text
 from bs4 import BeautifulSoup
 import requests
 import aiohttp
@@ -79,18 +80,17 @@ async def webscrape_all_festivals(db: AsyncSession = Depends(get_db)):
 
     # TODO: Check if festival already exists in database
 
-    tasks = [asyncio.create_task(scrape_festival_details(festival)) for festival in all_festivals[:5]]
+    tasks = [asyncio.create_task(scrape_festival_details(festival)) for festival in all_festivals]
     await asyncio.gather(*tasks)
 
-    for festival in all_festivals[:5]:
-        await save_temp_festival(festival, db)
+    # TODO: deduplicate entries
 
-    # await deduplicate_entries(db)
+    for festival in all_festivals:
+        await save_temp_festival(festival, db)
 
     result = await db.execute(select(StageArtist))
     artists = result.scalars().all()
 
-    all_tags = []
     batch_size = 50
     for i in range(0, len(artists), batch_size):
         batch = artists[i : i + batch_size]
@@ -104,6 +104,14 @@ async def webscrape_all_festivals(db: AsyncSession = Depends(get_db)):
                 if tag not in artist.stage_genres:
                     artist.stage_genres.append(tag)
             await db.merge(artist)
+
+    await db.commit()
+
+    # join stage tables with main tables
+    await merge_stage_tables(db)
+
+    # generate embeddings and put into table
+    await generate_embeddings(all_festivals, db)
 
     await db.commit()
 
@@ -148,8 +156,7 @@ async def save_temp_festival(festival, db):
         location=festival.location, 
         cancelled=festival.cancelled,
         start_date=festival.start_date, 
-        end_date=festival.end_date,
-        embedding=await generate_embedding(festival)
+        end_date=festival.end_date
     )
 
     for artist in festival.artists:
@@ -163,118 +170,6 @@ async def save_temp_festival(festival, db):
             new_festival.stage_tags.append(new_tag)
 
     await db.merge(new_festival)
-    await db.commit()
-
-async def deduplicate_entries(db):
-    """Deduplicates entries in the database."""
-
-    await deduplicate_artists(db)
-    await deduplicate_tags(db)
-
-    # check if festival already exists, update relationships
-    await db.execute(text("""
-        INSERT INTO festival_artists (festival_id, artist_id)
-        SELECT f.id, sfa.stage_artist_id
-        FROM stage_festival_artists sfa
-        JOIN festivals f ON f.name = (SELECT name FROM stage_festivals WHERE id = sfa.stage_festival_id)
-        ON CONFLICT (festival_id, artist_id) DO NOTHING;
-    """))
-
-    # delete tag relationships (no need to preserve)
-    await db.execute(text("""
-        DELETE FROM stage_festival_tags
-        WHERE stage_festival_id IN (
-            SELECT sf.id FROM stage_festivals sf
-            JOIN festivals f ON sf.name = f.name
-        );
-    """))
-
-    # delete duplicate festival entries
-    await db.execute(text("""
-        DELETE FROM stage_festivals
-        WHERE id IN (
-            SELECT sf.id FROM stage_festivals sf
-            JOIN festivals f ON sf.name = f.name
-        );
-    """))
-
-    # update artist relationships to point to permanent artist
-    await db.execute(text("""
-        UPDATE stage_festival_artists sfa
-        SET stage_artist_id = a.id
-        FROM artists a
-        WHERE sfa.stage_artist_id IN (
-            SELECT sa.id FROM stage_artists sa
-            WHERE sa.name = a.name
-        );
-    """))
-
-    # delete already existing artists
-    await db.execute(text("""
-        DELETE FROM stage_artists 
-        WHERE name IN (SELECT name FROM artists);
-    """))
-
-    await db.commit()
-
-async def deduplicate_tags(db):
-    """Deduplicates stage_tags while preserving festival-tag links."""
-
-    # Step 1: Create a mapping from duplicate tags to a single correct tag_id
-    await db.execute(text("""
-        CREATE TEMP TABLE tag_mapping AS
-        SELECT id AS old_id, 
-               FIRST_VALUE(id) OVER (PARTITION BY name ORDER BY id) AS new_id
-        FROM stage_tags;
-    """))
-
-    # Step 2: Update stage_festival_tags to use the correct tag_id
-    await db.execute(text("""
-        UPDATE stage_festival_tags sft
-        SET stage_tag_id = tm.new_id
-        FROM tag_mapping tm
-        WHERE sft.stage_tag_id = tm.old_id;
-    """))
-
-    # Step 3: Delete duplicate tags from stage_tags
-    # await db.execute(text("""
-    #     DELETE FROM stage_tags 
-    #     WHERE id IN (SELECT old_id FROM tag_mapping WHERE old_id != new_id);
-    # """))
-
-    # Step 4: Drop temporary mapping table
-    await db.execute(text("DROP TABLE tag_mapping;"))
-
-    await db.commit()
-
-async def deduplicate_artists(db):
-    """Deduplicates stage_artists while preserving festival-artist links."""
-
-    # Step 1: Create a mapping from duplicate tags to a single correct tag_id
-    await db.execute(text("""
-        CREATE TEMP TABLE artist_mapping AS
-        SELECT id AS old_id, 
-               FIRST_VALUE(id) OVER (PARTITION BY name ORDER BY id) AS new_id
-        FROM stage_artists;
-    """))
-
-    # Step 2: Update stage_festival_artists to use the correct tag_id
-    await db.execute(text("""
-        UPDATE stage_festival_artists sfa
-        SET stage_artist_id = am.new_id
-        FROM artist_mapping am
-        WHERE sfa.stage_artist_id = am.old_id;
-    """))
-
-    # Step 3: Delete duplicate tags from stage_tags
-    await db.execute(text("""
-        DELETE FROM stage_artists
-        WHERE id IN (SELECT old_id FROM artist_mapping WHERE old_id != new_id);
-    """))
-
-    # Step 4: Drop temporary mapping table
-    await db.execute(text("DROP TABLE artist_mapping;"))
-
     await db.commit()
 
 lastfm_rate_limit = asyncio.Semaphore(10)
@@ -295,16 +190,92 @@ async def gather_lastfm_tags(artist: str):
 
     return top_tags
 
-async def generate_embedding(festival):
-    """Formats a festival object for embedding."""
-    artist_list = ", ".join(festival.artists) if festival.artists else "various artists"
-    tag_list = ", ".join(festival.tags)
+async def generate_embeddings(festivals: list, db):
+    """Generates embeddings for a list of festivals."""
+    all_chunks = []
+    chunk_metadata = []
 
-    return await generate_embedding(
-        f"{festival.name} is a {tag_list} in {festival.location} on {festival.date}. "
-        f"Featured artists include: {artist_list}. "
-        f"Featured tags include: {tag_list}."
-    )
+    for festival in festivals:
+        artist_list = ", ".join(festival.artists) if festival.artists else "various artists"
+        tag_list = ", ".join(festival.tags)
+
+        chunks = chunk_text(
+            f"{festival.name} is a festival in {festival.location} on {festival.date}. "
+            f"Featured artists include: {artist_list}. "
+            f"Featured tags include: {tag_list}."
+        )
+        for i, chunk in enumerate(chunks):
+            all_chunks.append(chunk)
+            chunk_metadata.append((festival, i, chunk))
+
+    embeddings = await generate_embedding(all_chunks)
+
+    for (festival, index, text), embedding in zip(chunk_metadata, embeddings):
+        new_embedding = Embedding(name=festival.name, chunk_index=index, text=text, embedding=embedding)
+        await db.merge(new_embedding)
+
+    await db.commit()
+
+async def merge_stage_tables(db):
+    """Merges the stage tables with the main tables."""
+
+    await db.execute(text("""
+        INSERT INTO festivals (id, name, location, cancelled, start_date, end_date)
+        SELECT id, name, location, cancelled, start_date, end_date
+        FROM stage_festivals
+        ON CONFLICT (name) DO NOTHING;
+    """))
+
+    await db.execute(text("""
+        INSERT INTO artists (id, name)
+        SELECT id, name
+        FROM stage_artists
+        ON CONFLICT (name) DO NOTHING;
+    """))
+
+    await db.execute(text("""
+        INSERT INTO tags (id, name)
+        SELECT id, name
+        FROM stage_tags
+        ON CONFLICT (name) DO NOTHING;
+    """))
+
+    await db.execute(text("""
+        INSERT INTO festival_artists (festival_id, artist_id)
+        SELECT fa.stage_festival_id, fa.stage_artist_id
+        FROM stage_festival_artists fa
+        JOIN stage_festivals fs ON fa.stage_festival_id = fs.name
+        JOIN stage_artists ast ON fa.stage_artist_id = ast.name
+        ON CONFLICT (festival_id, artist_id) DO NOTHING;
+    """))
+
+    await db.execute(text("""
+        INSERT INTO festival_tags (festival_id, tag_id)
+        SELECT fa.stage_festival_id, fa.stage_tag_id
+        FROM stage_festival_tags fa
+        JOIN stage_festivals fs ON fa.stage_festival_id = fs.name
+        JOIN stage_tags ast ON fa.stage_tag_id = ast.name
+        ON CONFLICT (festival_id, tag_id) DO NOTHING;
+    """))
+
+    await db.execute(text("""
+        INSERT INTO artist_tags (artist_id, tag_id)
+        SELECT fa.stage_artist_id, fa.stage_tag_id
+        FROM stage_artist_tags fa
+        JOIN stage_artists fs ON fa.stage_artist_id = fs.name
+        JOIN stage_tags ast ON fa.stage_tag_id = ast.name
+        ON CONFLICT (artist_id, tag_id) DO NOTHING;
+    """))
+
+    await db.execute(text("DELETE FROM stage_festivals"))
+    await db.execute(text("DELETE FROM stage_artists"))
+    await db.execute(text("DELETE FROM stage_tags"))
+    await db.execute(text("DELETE FROM stage_festival_artists"))
+    await db.execute(text("DELETE FROM stage_festival_tags"))
+    await db.execute(text("DELETE FROM stage_artist_tags"))
+
+    await db.commit()
+
 
 @data_router2.get("/test-lastfm")
 async def test_lastfm(name: str):
