@@ -3,13 +3,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: flask-app
+    container_name: fastapi-app
     ports:
-      - "8080:5000"
+      - "8000:8000"
     # depends_on:
     #   - database
     environment:
-      DATABASE_URI: postgresql+psycopg2://postgres.ubesbxemvrevzeputnoo:SampliFiree@aws-0-us-west-1.pooler.supabase.com:5432/postgres
+      DATABASE_URI: ${DATABASE_URI}
     volumes:
       - .:/app
 

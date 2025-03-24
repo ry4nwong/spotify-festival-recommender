@@ -1,12 +1,24 @@
-# Artist: id, name (string), genre (list for now)
-from app.models import db
+import uuid
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, Integer, String
+from sqlalchemy.orm import relationship
+from app.database.db_init import Base
+from app.models.associations import artist_tags, festival_artists
 
-class Artist(db.Model):
-    __tablename__ = 'artists'
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    name = db.Column(db.String(255), nullable=False)
-    genres = db.relationship(
-        'Tag',
-        secondary='artist_tags',
-        backref=db.backref('artists', lazy='dynamic')
+class Artist(Base):
+    __tablename__ = "artists"
+
+    id = Column(UUID(as_uuid=True), default=uuid.uuid4)
+    name = Column(String(255), primary_key=True, nullable=False)
+    festivals = relationship(
+        "Festival",
+        secondary=festival_artists,
+        back_populates="artists",
+        lazy="selectin"
+    )
+    genres = relationship(
+        "Tag",
+        secondary=artist_tags,
+        back_populates="artists",
+        lazy="selectin"
     )

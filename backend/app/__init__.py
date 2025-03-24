@@ -1,32 +1,27 @@
-from flask import Flask
+from fastapi import FastAPI
 from dotenv import load_dotenv
 import os
-from app.models import db
-from app.routes import api_blueprint, auth_blueprint, data_blueprint, db_blueprint
+from app.database.db_init import init_db
+from app.routes.auth import auth_router
+from app.routes.db import db_router
+from app.routes.llm import llm_router
+from app.routes.data import data_router
 
-# Initialize Flask app with blueprint (API route structure)
-def create_app():
-    load_dotenv()
+load_dotenv()
 
-    app = Flask(__name__)
-    app.secret_key = os.getenv('SECRET_KEY')
+app = FastAPI(title="AI Festival Recommender API")
 
-    # Database connection
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URI')
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    db.init_app(app)
-    with app.app_context():
-        db.create_all()
+# Routes
+app.include_router(llm_router)
+app.include_router(auth_router)
+app.include_router(db_router)
+app.include_router(data_router)
 
-    # Spotify Auth
-    app.config['SPOTIFY_CLIENT_ID'] = os.getenv('CLIENT_ID')
-    app.config['SPOTIFY_CLIENT_SECRET'] = os.getenv('CLIENT_SECRET')
-    app.config['SPOTIFY_REDIRECT_URI'] = os.getenv('REDIRECT_URI')
 
-    # Register routes
-    app.register_blueprint(auth_blueprint, url_prefix='/auth')
-    app.register_blueprint(api_blueprint, url_prefix='/api')
-    app.register_blueprint(data_blueprint, url_prefix='/data')
-    app.register_blueprint(db_blueprint, url_prefix='/db')
+@app.on_event("startup")
+async def startup_event():
+    await init_db()
 
-    return app
+@app.on_event("shutdown")
+async def shutdown_event():
+    print("App shut down")

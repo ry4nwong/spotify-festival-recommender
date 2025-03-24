@@ -1,30 +1,47 @@
-from app.models import Artist, db
-from app.services.tag_service import create_or_get_tag
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from app.models.stage.stage_artist import StageArtist
+from app.models.stage.stage_tag import StageTag
+import asyncio
+import aiohttp
+import urllib.parse
+import os
 
-# Function to run web scraper on genre for each artist and persist in database
-def save_artist_genre(new_artists):
-    from app.routes.data import all_artist_genre
-    # Get genres for each new artist
-    artist_genres = all_artist_genre(new_artists)
 
-    for artist_name, genre_list in artist_genres.items():
-        # Artist should be guaranteed to be stored in db
-        artist = Artist.query.filter_by(name=artist_name).first()
+async def batch_search_artists(batch_size: int, db: AsyncSession):
+    """Concurrently searches batch_size artists until none left, inserts into database for processing."""
+    result = await db.execute(select(StageArtist))
+    artists = result.scalars().all()
+
+    for i in range(0, len(artists), batch_size):
+        batch = artists[i : i + batch_size]
+        artist_tasks = [gather_lastfm_tags(artist.name) for artist in batch]
+        batch_results = await asyncio.gather(*artist_tasks)
+
+        for artist, tags in zip(batch, batch_results):
+            merged_tags = [await db.merge(StageTag(name=tag)) for tag in tags]
+            for tag in merged_tags:
+                if tag not in artist.stage_genres:
+                    artist.stage_genres.append(tag)
+            await db.merge(artist)
+
+    await db.commit()
+
+lastfm_rate_limit = asyncio.Semaphore(10)
+
+async def gather_lastfm_tags(artist: str):
+    """Gathers an artist's genre tags from last.fm."""
+    url = f"https://ws.audioscrobbler.com/2.0/?method=artist.gettoptags&artist={urllib.parse.quote(artist)}&api_key={os.getenv("LASTFM_API_KEY")}&format=json"
+
+    async with lastfm_rate_limit:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                data = await response.json()
+        
+        await asyncio.sleep(0.5)
     
-        for genre_string in genre_list:
-            artist.genres.append(create_or_get_tag(genre_string)) 
+    tags_list = data.get("toptags", {}).get("tag", [])
+    sorted_tags = sorted(tags_list, key=lambda tag: tag["count"], reverse=True)
+    top_tags = [tag["name"].title() for tag in sorted_tags[:5]]
 
-# Helper function to get or create artist in database
-def create_or_get_artist(artist_name):
-    existing_artist = Artist.query.filter_by(name=artist_name).first()
-
-    # If artist does not already exist, create new entry
-    if not existing_artist:
-        new_artist = Artist(name=artist_name)
-        exists = False
-        db.session.add(new_artist)
-    else:
-        new_artist = existing_artist
-        exists = True
-
-    return new_artist, exists
+    return top_tags

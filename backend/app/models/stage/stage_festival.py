@@ -2,28 +2,28 @@ import uuid
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy import Column, Integer, String, DateTime, Boolean
 from sqlalchemy.orm import relationship
+from pgvector.sqlalchemy import Vector
 from app.database.db_init import Base
-from app.models.associations import festival_artists, festival_tags
+from app.models.stage.stage_associations import stage_festival_artists, stage_festival_tags
 
-class Festival(Base):
-    __tablename__ = "festivals"
+class StageFestival(Base):
+    __tablename__ = "stage_festivals"
 
     id = Column(UUID(as_uuid=True), default=uuid.uuid4)
     name = Column(String(255), primary_key=True, nullable=False)
     location = Column(String(255), nullable=False)
+    cancelled = Column(Boolean, default=False)
     start_date = Column(DateTime, nullable=True)
     end_date = Column(DateTime, nullable=True)
-    cancelled = Column(Boolean, default=False)
-    embedding_chunks = relationship("Embedding", back_populates="festival", uselist=False, cascade="all, delete-orphan")
-    artists = relationship(
-        "Artist",
-        secondary=festival_artists,
-        back_populates="festivals",
+    stage_artists = relationship(
+        "StageArtist",
+        secondary=stage_festival_artists,
+        back_populates="stage_festivals",
         lazy="selectin"
     )
-    tags = relationship(
-        "Tag",
-        secondary=festival_tags,
-        back_populates="festivals",
+    stage_tags = relationship(
+        "StageTag",
+        secondary=stage_festival_tags,
+        back_populates="stage_festivals",
         lazy="selectin"
     )

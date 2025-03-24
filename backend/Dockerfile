@@ -2,25 +2,22 @@
 FROM python:3.13
 
 # Set working directory
-WORKDIR /app
+WORKDIR /backend
 
 # Install dependencies
-COPY requirements.txt .
+COPY requirements.txt /backend/
 RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
+RUN pip install -r /backend/requirements.txt
 
 ### Install CHROMIUM-DRIVER, MIGHT NEED TO CHANGE ###
 RUN apt-get update && apt-get install -y chromium-driver 
 
 # Copy project files
-COPY . /app/
+COPY . /backend/
 
-# Set environment variables for Flask
-ENV FLASK_APP=app:create_app()
-ENV FLASK_RUN_HOST=0.0.0.0
+# Expose port
+EXPOSE 8000
 
-# Expose the port Flask runs on
-EXPOSE 5000
+# Start App
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--reload", "--port", "8000"]
 
-# Command to start the Flask app
-CMD ["flask", "run"]
