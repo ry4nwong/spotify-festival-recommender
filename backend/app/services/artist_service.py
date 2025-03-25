@@ -31,7 +31,7 @@ lastfm_rate_limit = asyncio.Semaphore(10)
 
 async def gather_lastfm_tags(artist: str):
     """Gathers an artist's genre tags from last.fm."""
-    url = f"https://ws.audioscrobbler.com/2.0/?method=artist.gettoptags&artist={urllib.parse.quote(artist)}&api_key={os.getenv("LASTFM_API_KEY")}&format=json"
+    url = f"https://ws.audioscrobbler.com/2.0/?method=artist.gettoptags&artist={urllib.parse.quote(artist)}&api_key={os.getenv('LASTFM_API_KEY')}&format=json"
 
     async with lastfm_rate_limit:
         async with aiohttp.ClientSession() as session:

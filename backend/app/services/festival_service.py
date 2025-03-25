@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
 from app.services import utils, artist_service, llm_service
 import asyncio
+import re
 
 class TempFestival:
     """Class to represent a festival object before inserting into the database."""
@@ -15,7 +16,7 @@ class TempFestival:
         self.link = link
 
 async def webscrape_all_festivals(db: AsyncSession):
-    """Scrapes all festival information from musicfestivalwizard."""
+    """Scrapes all festival information from musicfestivalwizard. Generates embeddings and stores all information."""
     all_festivals = []
     
     festival_url = "https://www.musicfestivalwizard.com/all-festivals/?festival_guide=us-festivals&festivalgenre=electronic"
@@ -52,7 +53,7 @@ async def webscrape_all_festivals(db: AsyncSession):
     await db.commit()
 
 async def scrape_festival_details(festival: TempFestival):
-    """Scrapes detailed information on a festival."""
+    """Scrapes detailed information on a festival (artists, tags, dates, description, FAQ)."""
     soup = await utils.get_html(festival.link)
 
     # Finds all artist elements
@@ -78,10 +79,37 @@ async def scrape_festival_details(festival: TempFestival):
     festival.end_date = end_date
     festival.cancelled = is_cancelled
 
-    
+    # Finds MFW descriptions
+    scene = soup.find("div", class_="hubscene")
+    festival.description = scene.get_text(strip=True) if scene else "There is no description for this festival."
+
+    # Finds FAQ section
+    hubtitle = soup.find("div", class_="hubtitle", string="Frequently Asked Questions")
+    if hubtitle:
+        faq_paragraphs = []
+        for sibling in hubtitle.find_next_siblings():
+            if sibling.name == "p":
+                faq_paragraphs.append(sibling)
+            else:
+                break
+
+        qa = ""
+        for p in faq_paragraphs:
+            question_tag = p.find("span")
+            question = question_tag.get_text(strip=True) if question_tag else ""
+
+            full_text = p.get_text(" ", strip=True)
+            answer = full_text.replace(question, "", 1).strip()
+
+            qa += question + " "
+            qa += answer + " "
+
+        festival.faq = qa
+    else:
+        festival.faq = "No frequently asked questions."
 
 async def save_temp_festival(festival: TempFestival, db: AsyncSession):
-    """Saves a temporary festival object to the database."""
+    """Saves a festival object to the staging table."""
     new_festival = StageFestival(
         name=festival.name, 
         location=festival.location, 
