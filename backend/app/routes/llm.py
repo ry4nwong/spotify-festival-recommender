@@ -24,7 +24,7 @@ async def hybrid_search(query: str, db: AsyncSession = Depends(get_db)):
 
 @llm_router.post("/test-mistral")
 async def test_mistral(query: str):
-    """Tests Mistral LLM from OpenRouter."""
+    """Tests Mistral AI from OpenRouter endpoint. Try not to use too many times"""
     api_key = os.getenv('OPENROUTER_API_KEY')
 
     headers = {
