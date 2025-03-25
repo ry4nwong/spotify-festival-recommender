@@ -13,3 +13,5 @@ sentence-transformers
 aiohttp
 pgvector
 torch
+langchain
+rapidfuzz
