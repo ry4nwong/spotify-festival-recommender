@@ -1,6 +1,7 @@
 from app.llm import sentence_transformer
 from app.models.embedding import Embedding
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete
 from app.llm.langchain import text_splitter
 from rapidfuzz import fuzz
 import numpy as np
@@ -28,7 +29,7 @@ async def generate_embeddings(festivals: list, db: AsyncSession):
         for i, chunk in enumerate(chunks):
             chunk_metadata.append((festival, i, chunk))
 
-    # deduplicate chunks
+    # deduplicate chunks, can sometimes have duplicates
     seen = set()
     unique_chunks = []
     for metadata in chunk_metadata:
@@ -37,8 +38,11 @@ async def generate_embeddings(festivals: list, db: AsyncSession):
             seen.add(key)
             unique_chunks.append(metadata)
     
-    chunk_texts = [chunk[2] for chunk in unique_chunks]
+    # delete old embeddings before insertion
+    for festival, _, _ in unique_chunks:
+        await db.execute(delete(Embedding).where(Embedding.name == festival.name))
 
+    chunk_texts = [chunk[2] for chunk in unique_chunks]
     embeddings = await sentence_transformer.generate_embeddings(chunk_texts)
 
     for (festival, index, text), embedding in zip(unique_chunks, embeddings):
