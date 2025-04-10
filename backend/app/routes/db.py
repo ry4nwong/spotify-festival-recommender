@@ -19,6 +19,15 @@ async def get_current_artists(db: AsyncSession = Depends(get_db)):
 async def get_current_tags(db: AsyncSession = Depends(get_db)):
     return await query("tags", db)
 
+@db_router.get("/festival")
+async def get_festival_by_name(name: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Festival).where(Festival.name == name))
+    festival = result.scalars().first()
+    if festival:
+        return {"festival": [artist.name for artist in festival.artists]}
+    else:
+        return {"error": "Festival artists not found"}
+
 # Helper function to get existing tables in database
 # LEAVE HERE FOR NOW, SHOULD BE IN FESTIVAL_SERVICE
 async def query(table: str, db: AsyncSession):

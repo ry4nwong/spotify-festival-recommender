@@ -1,10 +1,13 @@
 from app.models.stage.stage_artist import StageArtist
 from app.models.stage.stage_festival import StageFestival
 from app.models.stage.stage_tag import StageTag
+from app.models.festival import Festival
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from datetime import datetime
 from app.services import utils, artist_service, llm_service
 import asyncio
+import re
 
 class TempFestival:
     """Class to represent a festival object before inserting into the database."""
@@ -15,7 +18,7 @@ class TempFestival:
         self.link = link
 
 async def webscrape_all_festivals(db: AsyncSession):
-    """Scrapes all festival information from musicfestivalwizard."""
+    """Scrapes all festival information from musicfestivalwizard. Generates embeddings and stores all information."""
     all_festivals = []
     
     festival_url = "https://www.musicfestivalwizard.com/all-festivals/?festival_guide=us-festivals&festivalgenre=electronic"
@@ -31,15 +34,13 @@ async def webscrape_all_festivals(db: AsyncSession):
             page_link = a_tag["href"]
             all_festivals.append(TempFestival(festival_info[0], festival_info[1], correct_date(festival_info[2]), page_link))
 
-    # TODO: Check if festival already exists in database
-
     tasks = [asyncio.create_task(scrape_festival_details(festival)) for festival in all_festivals]
     await asyncio.gather(*tasks)
 
-    # TODO: deduplicate entries
-
+    filtered_festivals = [] # holds all festivals that need new embeddings
     for festival in all_festivals:
-        await save_temp_festival(festival, db)
+        if await save_temp_festival(festival, db):
+            filtered_festivals.append(festival)
 
     await artist_service.batch_search_artists(50, db)
 
@@ -47,12 +48,13 @@ async def webscrape_all_festivals(db: AsyncSession):
     await utils.merge_stage_tables(db)
 
     # generate embeddings and put into table
-    await llm_service.generate_embeddings(all_festivals, db)
+    if filtered_festivals:
+        await llm_service.generate_embeddings(filtered_festivals, db)
 
     await db.commit()
 
 async def scrape_festival_details(festival: TempFestival):
-    """Scrapes detailed information on a festival."""
+    """Scrapes detailed information on a festival (artists, tags, dates, description, FAQ)."""
     soup = await utils.get_html(festival.link)
 
     # Finds all artist elements
@@ -78,10 +80,49 @@ async def scrape_festival_details(festival: TempFestival):
     festival.end_date = end_date
     festival.cancelled = is_cancelled
 
-    
+    # Finds MFW descriptions
+    scene = soup.find("div", class_="hubscene")
+    festival.description = scene.get_text(strip=True) if scene else "There is no description for this festival."
+
+    # Finds FAQ section
+    hubtitle = soup.find("div", class_="hubtitle", string="Frequently Asked Questions")
+    if hubtitle:
+        faq_paragraphs = []
+        for sibling in hubtitle.find_next_siblings():
+            if sibling.name == "p":
+                faq_paragraphs.append(sibling)
+            else:
+                break
+
+        qa = ""
+        for p in faq_paragraphs:
+            question_tag = p.find("span")
+            question = question_tag.get_text(strip=True) if question_tag else ""
+
+            full_text = p.get_text(" ", strip=True)
+            answer = full_text.replace(question, "", 1).strip()
+
+            qa += question + " "
+            qa += answer + " "
+
+        festival.faq = qa
+    else:
+        festival.faq = "No frequently asked questions."
 
 async def save_temp_festival(festival: TempFestival, db: AsyncSession):
-    """Saves a temporary festival object to the database."""
+    """
+    Saves a festival object to the staging table, if it needs an update or does not exist.
+    Returns True if the festival was updated/inserted, False if not.
+    """
+    result = await db.execute(select(Festival).where(Festival.name == festival.name))
+    existing_festival = result.scalars().first()
+
+    # check if festival needs to be updated
+    # TODO: might need to check if artists updated too
+    if existing_festival:
+        if existing_festival.cancelled == festival.cancelled and existing_festival.artists:
+            return False
+
     new_festival = StageFestival(
         name=festival.name, 
         location=festival.location, 
@@ -102,6 +143,8 @@ async def save_temp_festival(festival: TempFestival, db: AsyncSession):
 
     await db.merge(new_festival)
     await db.commit()
+
+    return True
 
 def parse_festival_date(date_str: str):
     """Parses start and end dates from single string."""

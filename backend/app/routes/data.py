@@ -18,7 +18,6 @@ async def webscrape_all_festivals(db: AsyncSession = Depends(get_db)):
 
     return JSONResponse(content={"time": end_time - start_time})
 
-
 @data_router.get("/test-lastfm")
 async def test_lastfm(name: str):
     """Tests the last.fm API for gathering artist genres."""
@@ -31,3 +30,8 @@ async def test_lastfm(name: str):
     top_tags = [tag["name"] for tag in sorted_tags[:5]]
 
     return JSONResponse(content={"tags": top_tags})
+
+@data_router.get("/test-mfw")
+async def test_mfw(link: str):
+    """Tests detailed web scraping for musicfestivalwizard."""
+    await festival_service.scrape_scene_faq(link)
