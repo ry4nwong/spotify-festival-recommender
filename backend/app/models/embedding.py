@@ -7,7 +7,7 @@ from app.database.db_init import Base
 
 class Embedding(Base):
     __tablename__ = "embeddings"
-
+  
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(Text, ForeignKey("festivals.name", ondelete="CASCADE"))
     chunk_index = Column(Integer, nullable = False)
