@@ -3,7 +3,9 @@ from fastapi.responses import JSONResponse
 from app.llm import gpt2
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.dependencies import get_db
-from app.services.llm_service import hybrid_search
+from app.services.llm_service import perform_hybrid_search
+from app.services.auth_service import get_current_user
+from app.models.user import User
 import numpy as np
 import os
 import requests
@@ -17,10 +19,10 @@ async def generate(prompt: str):
     response = await gpt2.generate_text(prompt)
     return {"response": response}
 
-@llm_router.get("/search")
-async def hybrid_search(query: str, db: AsyncSession = Depends(get_db)):
+@llm_router.get("/search", response_model=None)
+async def hybrid_search(query: str, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """API wrapper for hybrid similarity search, returns top 5 festivals based on query."""
-    return await hybrid_search(query, db)
+    return await perform_hybrid_search(query, db)
 
 @llm_router.post("/test-mistral")
 async def test_mistral(query: str):

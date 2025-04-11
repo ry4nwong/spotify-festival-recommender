@@ -9,8 +9,8 @@ async_engine: AsyncEngine = create_async_engine(
     os.getenv("DATABASE_URI"), 
     echo=True, 
     future=True, 
-    pool_size=15, 
-    max_overflow=5,
+    pool_size=25, 
+    max_overflow=30,
     pool_timeout=30,
     pool_recycle=1800
 )
@@ -33,6 +33,9 @@ from app.models.festival import Festival
 from app.models.tag import Tag
 from app.models.embedding import Embedding
 from app.models.associations import festival_artists, artist_tags, festival_tags
+
+from app.models.user import User
+from app.models.auth_token import AuthToken
 
 async def init_db():
     async with async_engine.begin() as conn:

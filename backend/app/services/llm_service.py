@@ -51,7 +51,7 @@ async def generate_embeddings(festivals: list, db: AsyncSession):
 
     await db.commit()
 
-async def hybrid_search(query: str, db: AsyncSession):
+async def perform_hybrid_search(query: str, db: AsyncSession):
     """Completes a hybrid search (semantic + keyword) and returns top 5 festivals based on the input."""
     # generate embedding
     embedding = await sentence_transformer.generate_embedding(query)
